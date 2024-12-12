@@ -65,6 +65,20 @@ typedef struct posix_header
 int check_archive(int tar_fd);
 
 /**
+ * Validates a tar archive header.
+ *
+ * Checks the header's `magic`, `version`, and checksum for validity. 
+ * Returns the header index if `magic` is empty, signaling the end of the archive.
+ *
+ * @param header The tar header to validate.
+ * @param nheader The current header index in the archive.
+ * 
+ * @return `nheader` if `magic` is empty, 0 if valid, 
+ *         -1 for invalid `magic`, -2 for invalid `version`, -3 for invalid checksum.
+ */
+int valid_archive(tar_header_t header,int nheader);
+
+/**
  * Computes the aligned size of a file in a tar archive.
  *
  * @param header A tar header structure containing metadata about the file, including its size in octal format.
@@ -75,7 +89,6 @@ long aligned_size(tar_header_t header);
 
 /**
  * Validates the checksum of a TAR archive header.
- *
  *
  * @param header A tar_header_t structure representing a single header of the TAR archive.
  *
@@ -94,6 +107,21 @@ int check_sum(tar_header_t header);
  *         any other value otherwise.
  */
 int exists(int tar_fd, char *path);
+
+/**
+ * Checks if a given path matches the full path of the current tar header entry.
+ *
+ * @param header A tar_header_t structure representing a single header entry in the tar archive.
+ * @param path The path to compare against the constructed full path.
+ * @param full_path A buffer to store the constructed full path of the header entry.
+ * @param nheader The index of the current header entry.
+ *
+ * @return The index of the header entry (`nheader`) if the paths match,
+ *         0 if the `name` field of the header is empty,
+ *         -1 if the paths do not match.
+ */
+
+int is_path (tar_header_t header,char *path, char *full_path, int size_full_path, int nheader);
 
 /**
  * Checks whether an entry in the archive matches the specified typeflag.

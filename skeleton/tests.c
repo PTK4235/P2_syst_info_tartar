@@ -36,8 +36,8 @@ int main(int argc, char **argv) {
         return -1;
     }
 
-    // int ret = check_archive(fd);
-    // printf("check_archive returned %d\n", ret);
+    int ret = check_archive(fd);
+    printf("check_archive returned %d\n", ret);
 
     // const char *path_to_check = "testar/doss/test.c";
     // int ret = exists(fd,(char*)path_to_check);

@@ -19,35 +19,23 @@
  */
 int check_archive(int tar_fd) {
     tar_header_t header;
+    int valid_arch;
+    int nheader = 0;
+
     FILE* fd = fdopen(tar_fd,"rb");
     if (fd == NULL) {
         perror("fdopen failed");
         return -1;
     }
-    int nheader = 0;
 
 
     while(fread(&header, sizeof(tar_header_t),1,fd) == 1){
-        if(header.magic[0] == '\0'){
+        valid_arch = valid_archive(header,nheader);
+        if (valid_arch != 0){
             fclose(fd);
-            return nheader;
-        }
-        else if (strncmp(header.magic,TMAGIC,TMAGLEN) != 0){
-            fclose(fd);
-            perror("magic value not valid");
-            return -1;
-        }
-        else if (strncmp(header.version, TVERSION, TVERSLEN) != 0) {
-            perror("version not valid");
-            return -2;
-        }
-        else if (check_sum(header) == 0){
-            fclose(fd);
-            perror("checksum not valid");
-            return -3;
+            return valid_arch;
         }
         nheader++;
-
 
         if (fseek(fd, aligned_size(header), SEEK_CUR) != 0) {
             perror("fseek failed");
@@ -55,8 +43,38 @@ int check_archive(int tar_fd) {
             return -3;
         }
     }
-    
     fclose(fd);
+    return 0;
+}
+
+/**
+ * Validates a tar archive header.
+ *
+ * Checks the header's `magic`, `version`, and checksum for validity. 
+ * Returns the header index if `magic` is empty, signaling the end of the archive.
+ *
+ * @param header The tar header to validate.
+ * @param nheader The current header index in the archive.
+ * 
+ * @return `nheader` if `magic` is empty, 0 if valid, 
+ *         -1 for invalid `magic`, -2 for invalid `version`, -3 for invalid checksum.
+ */
+int valid_archive(tar_header_t header,int nheader){
+    if(header.magic[0] == '\0'){
+        return nheader;
+    }
+    else if (strncmp(header.magic,TMAGIC,TMAGLEN) != 0){
+        perror("magic value not valid");
+        return -1;
+    }
+    else if (strncmp(header.version, TVERSION, TVERSLEN) != 0) {
+        perror("version not valid");
+        return -2;
+    }
+    else if (check_sum(header) == 0){
+        perror("checksum not valid");
+        return -3;
+    }
     return 0;
 }
 
@@ -76,11 +94,6 @@ long aligned_size(tar_header_t header){
 /**
  * Validates the checksum of a TAR archive header.
  *
- * This function calculates the checksum of the given TAR header and compares it
- * with the checksum value stored in the header. According to the TAR specification,
- * the checksum is calculated by summing all bytes of the header, treating the 
- * checksum field (bytes 148–155) as spaces (' ') during the calculation.
- *
  * @param header A tar_header_t structure representing a single header of the TAR archive.
  *
  * @return 1 if the calculated checksum matches the stored checksum, indicating the header is valid.
@@ -88,10 +101,10 @@ long aligned_size(tar_header_t header){
  *
  */
 int check_sum(tar_header_t header){
-
     unsigned char *header_bytes = (unsigned char *)&header;
     unsigned int checksum = strtol(header.chksum, NULL, 8);
     unsigned int sum = 0;
+
     for (int i = 0; i < sizeof(tar_header_t); i++){
         if (i >= 148 && i <= 155){
             sum += ' ';
@@ -101,10 +114,7 @@ int check_sum(tar_header_t header){
         }
         
     }
-    if (sum == checksum){
-        return 1;
-    }
-    return 0;
+    return (sum == checksum);
 }
 
 /**
@@ -120,6 +130,7 @@ int exists(int tar_fd, char *path) {
     tar_header_t header;
     char full_path[256];
     int nheader = 0;
+    int path_finder;
     
     FILE* fd = fdopen(tar_fd,"rb");
     if (fd == NULL) {
@@ -127,32 +138,13 @@ int exists(int tar_fd, char *path) {
         return -1;
     }
 
-    if (check_archive(tar_fd) != 0){
-        perror("check archive failed");
-        fclose(fd);
-        return -1;
-    }
-
     while(fread(&header, sizeof(tar_header_t),1,fd) == 1){
-        if (header.name[0] == '\0') {
+
+        path_finder = is_path(header, path, full_path,sizeof(full_path), nheader);
+        if (path_finder != -1){
             fclose(fd);
-            return 0;
+            return path_finder;
         }
-
-        if (header.prefix[0] != '\0') {
-            snprintf(full_path, sizeof(full_path), "%s/%s", header.prefix, header.name);
-        }
-        else {
-            strncpy(full_path, header.name, sizeof(full_path));
-        }
-
-        full_path[sizeof(full_path) - 1] = '\0';
-
-        if (strcmp(full_path, path) == 0) {
-            fclose(fd);
-            return nheader;
-        }
-
         nheader++;
 
         if (fseek(fd, aligned_size(header), SEEK_CUR) != 0) {
@@ -163,6 +155,40 @@ int exists(int tar_fd, char *path) {
     }
     fclose(fd);
     return 0;
+}
+
+/**
+ * Checks if a given path matches the full path of the current tar header entry.
+ *
+ * @param header A tar_header_t structure representing a single header entry in the tar archive.
+ * @param path The path to compare against the constructed full path.
+ * @param full_path A buffer to store the constructed full path of the header entry.
+ * @param nheader The index of the current header entry.
+ *
+ * @return The index of the header entry (`nheader`) if the paths match,
+ *         0 if the `name` field of the header is empty,
+ *         -1 if the paths do not match.
+ */
+
+int is_path(tar_header_t header,char *path, char *full_path, int size_full_path,int nheader){
+    if (header.name[0] == '\0') {
+        return 0;
+    }
+
+    if (header.prefix[0] != '\0') {
+        snprintf(full_path, size_full_path, "%s/%s", header.prefix, header.name);
+    }
+    else {
+        strncpy(full_path, header.name, size_full_path);
+    }
+
+    full_path[sizeof(full_path) - 1] = '\0';
+
+    if (strcmp(full_path, path) == 0) {
+        
+        return nheader;
+    }
+    return -1;
 }
 
 /**
@@ -178,6 +204,8 @@ int exists(int tar_fd, char *path) {
  */
 int check_flag(int tar_fd, char *path, char typeflag){
     tar_header_t header;
+    char full_path[256];
+    int path_finder;
 
     FILE* fd = fdopen(tar_fd,"rb");
     if (fd == NULL) {
@@ -186,27 +214,29 @@ int check_flag(int tar_fd, char *path, char typeflag){
     }
     int nheader = 0;
 
-    if (exists(tar_fd,path) <=0){
-        perror("not exist");
-        fclose(fd);
-        return 0;
-    }
+
 
 
     while(fread(&header, sizeof(tar_header_t),1,fd) == 1){
-        if (typeflag == REGTYPE && ((header.typeflag == REGTYPE) || (header.typeflag == AREGTYPE))){
+        path_finder = is_path(header,path,full_path,sizeof(full_path),nheader);
+        if (path_finder == 0){
             fclose(fd);
-            return 1;
+            return 0;
         }
-        else if (header.typeflag == typeflag){
-            fclose(fd);
-            return 1;
+        else if (path_finder < 0){
+            if (typeflag == REGTYPE && ((header.typeflag == REGTYPE) || (header.typeflag == AREGTYPE))){
+                fclose(fd);
+                return 1;
+            }
+            else if (header.typeflag == typeflag){
+                fclose(fd);
+                return 1;
+            }
         }
         
 
         nheader++;
 
-        // Se déplacer vers le prochain en-tête
         if (fseek(fd, aligned_size(header), SEEK_CUR) != 0) {
             perror("fseek failed");
             fclose(fd);
