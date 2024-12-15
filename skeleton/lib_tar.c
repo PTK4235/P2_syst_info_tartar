@@ -22,28 +22,18 @@ int check_archive(int tar_fd) {
     int valid_arch;
     int nheader = 0;
 
-    FILE* fd = fdopen(tar_fd,"rb");
-    if (fd == NULL) {
-        perror("fdopen failed");
-        return -1;
-    }
-
-
-    while(fread(&header, sizeof(tar_header_t),1,fd) == 1){
+    while (read(tar_fd, (void*)&header, sizeof(tar_header_t)) == sizeof(tar_header_t)) {
         valid_arch = valid_archive(header,nheader);
         if (valid_arch != 0){
-            fclose(fd);
             return valid_arch;
         }
         nheader++;
 
-        if (fseek(fd, aligned_size(header), SEEK_CUR) != 0) {
+        if (lseek(tar_fd, aligned_size(header), SEEK_CUR) != 0) {
             perror("fseek failed");
-            fclose(fd);
             return -3;
         }
     }
-    fclose(fd);
     return 0;
 }
 
@@ -112,7 +102,6 @@ int check_sum(tar_header_t header){
         else{
             sum += header_bytes[i];
         }
-        
     }
     return (sum == checksum);
 }
@@ -128,67 +117,25 @@ int check_sum(tar_header_t header){
  */
 int exists(int tar_fd, char *path) {
     tar_header_t header;
-    char full_path[256];
     int nheader = 0;
-    int path_finder;
-    
-    FILE* fd = fdopen(tar_fd,"rb");
-    if (fd == NULL) {
-        perror("fdopen failed");
-        return -1;
-    }
 
-    while(fread(&header, sizeof(tar_header_t),1,fd) == 1){
+    while (read(tar_fd, (void*)&header, sizeof(tar_header_t)) == sizeof(tar_header_t)) {
 
-        path_finder = is_path(header, path, full_path,sizeof(full_path), nheader);
-        if (path_finder != -1){
-            fclose(fd);
-            return path_finder;
+        if (header.name[0] == '\0') {
+            return 0;
         }
+        else if (strcmp(header.name, path) == 0) {
+            return nheader;
+        }
+
         nheader++;
 
-        if (fseek(fd, aligned_size(header), SEEK_CUR) != 0) {
+        if (lseek(tar_fd, aligned_size(header), SEEK_CUR) != 0) {
             perror("fseek failed");
-            fclose(fd);
             return -3;
         }
     }
-    fclose(fd);
     return 0;
-}
-
-/**
- * Checks if a given path matches the full path of the current tar header entry.
- *
- * @param header A tar_header_t structure representing a single header entry in the tar archive.
- * @param path The path to compare against the constructed full path.
- * @param full_path A buffer to store the constructed full path of the header entry.
- * @param nheader The index of the current header entry.
- *
- * @return The index of the header entry (`nheader`) if the paths match,
- *         0 if the `name` field of the header is empty,
- *         -1 if the paths do not match.
- */
-
-int is_path(tar_header_t header,char *path, char *full_path, int size_full_path,int nheader){
-    if (header.name[0] == '\0') {
-        return 0;
-    }
-
-    if (header.prefix[0] != '\0') {
-        snprintf(full_path, size_full_path, "%s/%s", header.prefix, header.name);
-    }
-    else {
-        strncpy(full_path, header.name, size_full_path);
-    }
-
-    full_path[sizeof(full_path) - 1] = '\0';
-
-    if (strcmp(full_path, path) == 0) {
-        
-        return nheader;
-    }
-    return -1;
 }
 
 /**
@@ -204,46 +151,27 @@ int is_path(tar_header_t header,char *path, char *full_path, int size_full_path,
  */
 int check_flag(int tar_fd, char *path, char typeflag){
     tar_header_t header;
-    char full_path[256];
-    int path_finder;
-
-    FILE* fd = fdopen(tar_fd,"rb");
-    if (fd == NULL) {
-        perror("fdopen failed");
-        return -1;
-    }
     int nheader = 0;
 
-
-
-
-    while(fread(&header, sizeof(tar_header_t),1,fd) == 1){
-        path_finder = is_path(header,path,full_path,sizeof(full_path),nheader);
-        if (path_finder == 0){
-            fclose(fd);
+    while (read(tar_fd, (void*)&header, sizeof(tar_header_t)) == sizeof(tar_header_t)) {
+        if (header.name[0] == '\0') {
             return 0;
         }
-        else if (path_finder < 0){
+        else if (strcmp(header.name, path) == 0){
             if (typeflag == REGTYPE && ((header.typeflag == REGTYPE) || (header.typeflag == AREGTYPE))){
-                fclose(fd);
-                return 1;
+                return nheader;
             }
             else if (header.typeflag == typeflag){
-                fclose(fd);
-                return 1;
+                return nheader;
             }
         }
-        
-
         nheader++;
 
-        if (fseek(fd, aligned_size(header), SEEK_CUR) != 0) {
+        if (lseek(tar_fd, aligned_size(header), SEEK_CUR) != 0) {
             perror("fseek failed");
-            fclose(fd);
             return -3;
         }
     }
-    fclose(fd);
     return 0;
 
 }
@@ -310,7 +238,40 @@ int is_symlink(int tar_fd, char *path) {
  *         any other value otherwise.
  */
 int list(int tar_fd, char *path, char **entries, size_t *no_entries) {
-    return 0;
+    tar_header_t header;
+    int count = 0;
+    size_t path_len = strlen(path);
+
+    while (read(tar_fd, (void*)&header, sizeof(tar_header_t)) == sizeof(tar_header_t)) {
+        if (header.name[0] == '\0') {
+            break;
+        }
+
+        if (strncmp(header.name, path, path_len) == 0) {
+            const char *relative_path = header.name + path_len;
+
+            if (strchr(relative_path, '/') == NULL || 
+                strchr(relative_path, '/') == relative_path + strlen(relative_path) - 1) {
+
+                if (count < *no_entries) {
+                    strncpy(entries[count], relative_path, 100);
+                    entries[count][99] = '\0';
+                }
+                count++;
+            }
+        }
+
+
+        off_t align_offset = aligned_size(header);
+        if (lseek(tar_fd, align_offset, SEEK_CUR) == (off_t)-1) {
+            perror("lseek failed");
+            return -2;
+        }
+    }
+
+    *no_entries = count;
+
+    return (count > 0) ? 0 : -1;
 }
 
 /**

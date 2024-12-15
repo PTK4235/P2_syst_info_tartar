@@ -9,6 +9,7 @@
 #include <string.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <dirent.h>
 
 
 typedef struct posix_header
@@ -107,21 +108,6 @@ int check_sum(tar_header_t header);
  *         any other value otherwise.
  */
 int exists(int tar_fd, char *path);
-
-/**
- * Checks if a given path matches the full path of the current tar header entry.
- *
- * @param header A tar_header_t structure representing a single header entry in the tar archive.
- * @param path The path to compare against the constructed full path.
- * @param full_path A buffer to store the constructed full path of the header entry.
- * @param nheader The index of the current header entry.
- *
- * @return The index of the header entry (`nheader`) if the paths match,
- *         0 if the `name` field of the header is empty,
- *         -1 if the paths do not match.
- */
-
-int is_path (tar_header_t header,char *path, char *full_path, int size_full_path, int nheader);
 
 /**
  * Checks whether an entry in the archive matches the specified typeflag.

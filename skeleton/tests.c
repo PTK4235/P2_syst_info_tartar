@@ -36,8 +36,8 @@ int main(int argc, char **argv) {
         return -1;
     }
 
-    int ret = check_archive(fd);
-    printf("check_archive returned %d\n", ret);
+    // int ret = check_archive(fd);
+    // printf("check_archive returned %d\n", ret);
 
     // const char *path_to_check = "testar/doss/test.c";
     // int ret = exists(fd,(char*)path_to_check);
@@ -47,6 +47,31 @@ int main(int argc, char **argv) {
     // int ret = is_dir(fd, dir_to_check);
     // printf("is_dir returned %d\n", ret);
 
+    size_t no_entries = 10;
+    char *entries[10];
 
+    for (size_t i = 0; i < 10; i++) {
+        entries[i] = malloc(100 * sizeof(char)); 
+        if (entries[i] == NULL) {
+            perror("Failed to allocate memory for entry");
+            return 1;
+        }
+    }
+
+    int result = list(fd, "testar/doss2/", entries, &no_entries);
+    if (result != 0) {
+        printf("No directory found at given path in the archive.\n");
+    } else {
+        printf("Entries listed:\n");
+        for (size_t i = 0; i < no_entries; i++) {
+            printf("%s\n", entries[i]);
+        }
+    }
+
+    for (size_t i = 0; i < 10; i++) {
+        free(entries[i]);
+    }
+
+    close(fd);
     return 0;
 }
