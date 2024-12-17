@@ -29,12 +29,16 @@ int check_archive(int tar_fd) {
         }
         nheader++;
 
-        if (lseek(tar_fd, aligned_size(header), SEEK_CUR) != 0) {
+        if (lseek(tar_fd, aligned_size(header), SEEK_CUR) == -1) {
             perror("fseek failed");
             return -3;
         }
     }
-    return 0;
+    if (lseek(tar_fd, 0, SEEK_SET)  == -1) {
+        perror("fseek failed");
+        return -3;
+    }
+    return nheader;
 }
 
 /**
@@ -117,7 +121,6 @@ int check_sum(tar_header_t header){
  */
 int exists(int tar_fd, char *path) {
     tar_header_t header;
-    int nheader = 0;
 
     while (read(tar_fd, (void*)&header, sizeof(tar_header_t)) == sizeof(tar_header_t)) {
 
@@ -125,16 +128,19 @@ int exists(int tar_fd, char *path) {
             return 0;
         }
         else if (strcmp(header.name, path) == 0) {
-            return nheader;
+            return 1;
         }
 
-        nheader++;
-
-        if (lseek(tar_fd, aligned_size(header), SEEK_CUR) != 0) {
+        if (lseek(tar_fd, aligned_size(header), SEEK_CUR)  == -1) {
             perror("fseek failed");
             return -3;
         }
     }
+    if (lseek(tar_fd, 0, SEEK_SET)  == -1) {
+        perror("fseek failed");
+        return -3;
+    }
+    
     return 0;
 }
 
@@ -151,26 +157,31 @@ int exists(int tar_fd, char *path) {
  */
 int check_flag(int tar_fd, char *path, char typeflag){
     tar_header_t header;
-    int nheader = 0;
 
     while (read(tar_fd, (void*)&header, sizeof(tar_header_t)) == sizeof(tar_header_t)) {
         if (header.name[0] == '\0') {
             return 0;
         }
-        else if (strcmp(header.name, path) == 0){
+        if (strcmp(header.name, path) == 0){
             if (typeflag == REGTYPE && ((header.typeflag == REGTYPE) || (header.typeflag == AREGTYPE))){
-                return nheader;
+                return 1;
             }
-            else if (header.typeflag == typeflag){
-                return nheader;
+            if (header.typeflag == typeflag){
+                
+                return 1;
             }
+            return 0;
         }
-        nheader++;
+        
 
-        if (lseek(tar_fd, aligned_size(header), SEEK_CUR) != 0) {
+        if (lseek(tar_fd, aligned_size(header), SEEK_CUR) == -1) {
             perror("fseek failed");
             return -3;
         }
+    }
+    if (lseek(tar_fd, 0, SEEK_SET)  == -1) {
+        perror("fseek failed");
+        return -3;
     }
     return 0;
 
@@ -253,25 +264,31 @@ int list(int tar_fd, char *path, char **entries, size_t *no_entries) {
             if (strchr(relative_path, '/') == NULL || 
                 strchr(relative_path, '/') == relative_path + strlen(relative_path) - 1) {
 
-                if (count < *no_entries) {
-                    strncpy(entries[count], relative_path, 100);
+                if (count < *no_entries && strcmp(path,header.name)) {
+                    strncpy(entries[count], header.name, 100);
                     entries[count][99] = '\0';
+
+                    count++;
                 }
-                count++;
+                
+                
             }
         }
 
-
         off_t align_offset = aligned_size(header);
-        if (lseek(tar_fd, align_offset, SEEK_CUR) == (off_t)-1) {
+        if (lseek(tar_fd, align_offset, SEEK_CUR) == -1) {
             perror("lseek failed");
             return -2;
         }
     }
+    if (lseek(tar_fd, 0, SEEK_SET)  == -1) {
+        perror("fseek failed");
+        return -3;
+    }
 
     *no_entries = count;
 
-    return (count > 0) ? 0 : -1;
+    return count;
 }
 
 /**
@@ -293,5 +310,61 @@ int list(int tar_fd, char *path, char **entries, size_t *no_entries) {
  *
  */
 ssize_t read_file(int tar_fd, char *path, size_t offset, uint8_t *dest, size_t *len) {
-    return 0;
+    tar_header_t header;
+    
+
+    while (read(tar_fd, (void*)&header, sizeof(tar_header_t)) == sizeof(tar_header_t)) {
+        if (header.name[0] == '\0') {
+            break;
+        }
+
+        if (strcmp(header.name, path) == 0) {
+            
+            if (header.typeflag == SYMTYPE){
+                char *new_path = header.linkname;
+                if (lseek(tar_fd, 0, SEEK_SET) == -1) {
+                    perror("lseek failed");
+                    return -3;
+                }
+                return read_file(tar_fd, new_path, offset, dest, len);
+            }
+            else if (header.typeflag != REGTYPE && header.typeflag != AREGTYPE) {
+                return -1;
+            }
+            
+            size_t file_size = strtol(header.size, NULL, 8);
+
+            if (offset >= file_size){
+                return -2;
+            }
+
+            if (lseek(tar_fd, offset, SEEK_CUR) == -1) {
+                perror("fseek failed");
+                return -3;
+            }
+
+            size_t data_len = file_size - offset;
+            if (*len < data_len) {
+                data_len = *len;
+            }
+            ssize_t bytes_read = read(tar_fd, dest, data_len);
+            if (bytes_read == -1) {
+                perror("read failed");
+                return -3;
+            }
+            *len = bytes_read;
+            return file_size - offset - bytes_read;
+        }
+
+        if (lseek(tar_fd, aligned_size(header), SEEK_CUR) == -1) {
+            perror("fseek failed");
+            return -3;
+        }
+    }
+    if (lseek(tar_fd, 0, SEEK_SET)  == -1) {
+        perror("fseek failed");
+        return -3;
+    }
+    return -1;
 }
+

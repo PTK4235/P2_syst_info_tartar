@@ -58,19 +58,21 @@ int main(int argc, char **argv) {
         }
     }
 
-    int result = list(fd, "testar/doss2/", entries, &no_entries);
+    int result = list(fd, "testar/doss/", entries, &no_entries);
     if (result != 0) {
         printf("No directory found at given path in the archive.\n");
     } else {
         printf("Entries listed:\n");
         for (size_t i = 0; i < no_entries; i++) {
-            printf("%s\n", entries[i]);
+            printf("%ld : %s\n", i,entries[i]);
         }
     }
+    printf("n entries : %ld \n",no_entries);
 
     for (size_t i = 0; i < 10; i++) {
         free(entries[i]);
     }
+
 
     close(fd);
     return 0;
