@@ -252,20 +252,30 @@ int list(int tar_fd, char *path, char **entries, size_t *no_entries) {
     tar_header_t header;
     int count = 0;
     size_t path_len = strlen(path);
+    char *new_path;
 
     while (read(tar_fd, (void*)&header, sizeof(tar_header_t)) == sizeof(tar_header_t)) {
         if (header.name[0] == '\0') {
             break;
         }
+        new_path = header.name;
 
-        if (strncmp(header.name, path, path_len) == 0) {
-            const char *relative_path = header.name + path_len;
+
+        if (strncmp(new_path, path, path_len) == 0) {
+            if (header.typeflag == SYMTYPE){
+                new_path = header.linkname;
+                if (lseek(tar_fd, 0, SEEK_SET) == -1) {
+                    perror("lseek failed");
+                    return -3;
+                }
+            }
+            const char *relative_path = new_path + path_len;
 
             if (strchr(relative_path, '/') == NULL || 
                 strchr(relative_path, '/') == relative_path + strlen(relative_path) - 1) {
 
-                if (count < *no_entries && strcmp(path,header.name)) {
-                    strncpy(entries[count], header.name, 100);
+                if (count < *no_entries && strcmp(path,new_path)) {
+                    strncpy(entries[count], new_path, 100);
                     entries[count][99] = '\0';
 
                     count++;
