@@ -58,7 +58,7 @@ int main(int argc, char **argv) {
         }
     }
 
-    int result = list(fd, "soumission/", entries, &no_entries);
+    int result = list(fd, "testar/", entries, &no_entries);
     if (result != 0) {
         printf("No directory found at given path in the archive.\n");
     } else {
