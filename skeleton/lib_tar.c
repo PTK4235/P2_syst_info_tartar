@@ -157,17 +157,23 @@ int exists(int tar_fd, char *path) {
  */
 int check_flag(int tar_fd, char *path, char typeflag){
     tar_header_t header;
+    if (lseek(tar_fd, 0, SEEK_SET) == -1) {
+        perror("lseek failed");
+        return -1;
+    }
 
     while (read(tar_fd, (void*)&header, sizeof(tar_header_t)) == sizeof(tar_header_t)) {
+
+
         if (header.name[0] == '\0') {
             return 0;
         }
         if (strcmp(header.name, path) == 0){
+            
             if (typeflag == REGTYPE && ((header.typeflag == REGTYPE) || (header.typeflag == AREGTYPE))){
                 return 1;
             }
             if (header.typeflag == typeflag){
-                
                 return 1;
             }
             return 0;
@@ -253,15 +259,18 @@ int list(int tar_fd, char *path, char **entries, size_t *no_entries) {
     tar_header_t header;
     size_t path_len = strlen(path);
     size_t count = 0;
+    char * path_slash = NULL;
 
+    if (lseek(tar_fd, 0, SEEK_SET)  == -1) {
+        perror("fseek failed");
+        return -3;
+    }
+    
     if (path == NULL || entries == NULL || no_entries == NULL) {
         fprintf(stderr, "Error: invalid arguments to list()\n");
         return -1;
     }
 
-    if (!is_dir(tar_fd, path) && !is_symlink(tar_fd, path)) {
-        return 0;
-    }
     if (is_symlink(tar_fd,path)){
         char* new_path = get_symlink(tar_fd,path);
         if (new_path == NULL){
@@ -269,24 +278,25 @@ int list(int tar_fd, char *path, char **entries, size_t *no_entries) {
         }
         return list(tar_fd, new_path, entries, no_entries);
     }
-    if (lseek(tar_fd, 0, SEEK_SET) == -1) {
-        perror("lseek failed");
-        return -1;
+    
+    if (!is_dir(tar_fd, path_slash)) {
+        return 0;
     }
+    
 
     while (read(tar_fd, &header, sizeof(tar_header_t)) == sizeof(tar_header_t)) {
         if (header.name[0] == '\0') {
             break;
         }
 
-        if (strncmp(header.name, path, path_len) == 0) {
+        if (strncmp(header.name, path_slash, path_len) == 0) {
 
             const char *relative_path = header.name + path_len;
 
             if (strchr(relative_path, '/') == NULL ||
                 strchr(relative_path, '/') == relative_path + strlen(relative_path) - 1) {
 
-                if (count < *no_entries && strcmp(path, header.name) != 0) {
+                if (count < *no_entries && strcmp(path_slash, header.name) != 0) {
                     strncpy(entries[count], header.name, 100);
                     entries[count][99] = '\0';
                     count++;
@@ -311,28 +321,31 @@ int list(int tar_fd, char *path, char **entries, size_t *no_entries) {
     return count;
 }
 
-//TODO handle 
+// TODO handle symlink relative path
 char* get_symlink(int tar_fd, char *path){
     tar_header_t header;
 
+    if (lseek(tar_fd, 0, SEEK_SET)  == -1) {
+        perror("fseek failed");
+        return NULL;
+    }
 
     while (read(tar_fd, (void*)&header, sizeof(tar_header_t)) == sizeof(tar_header_t)) {
         if (header.name[0] == '\0') {
             return NULL;
         }
         if (strcmp(header.name, path) == 0) {
-            
-            if (header.typeflag == SYMTYPE){
-                if (lseek(tar_fd, 0, SEEK_SET) == -1) {
-                    perror("lseek failed");
+            if (header.linkname[0] != '\0') {
+                char *symlink_target = strdup(header.linkname);
+                if (!symlink_target) {
+                    perror("strdup failed");
                     return NULL;
                 }
-                if (is_symlink(tar_fd, header.linkname)){
-                    return get_symlink(tar_fd, header.linkname);
-                }
-                
+                return symlink_target;
+            } else {
+                fprintf(stderr, "Error: not a symlink\n");
+                return NULL;
             }
-            return strdup(strcat(path,"/"));
         }
 
         if (lseek(tar_fd, aligned_size(header), SEEK_CUR) == -1) {

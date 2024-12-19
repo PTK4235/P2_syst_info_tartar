@@ -30,49 +30,44 @@ int main(int argc, char **argv) {
         return -1;
     }
 
-    int fd = open(argv[1] , O_RDONLY);
+    int fd = open(argv[1], O_RDONLY);
     if (fd == -1) {
         perror("open(tar_file)");
         return -1;
     }
 
-    // int ret = check_archive(fd);
-    // printf("check_archive returned %d\n", ret);
-
-    // const char *path_to_check = "testar/doss/test.c";
-    // int ret = exists(fd,(char*)path_to_check);
-    // printf("check_path returned %d\n", ret);
-
-    // char *dir_to_check = "doss/";
-    // int ret = is_dir(fd, dir_to_check);
-    // printf("is_dir returned %d\n", ret);
-
     size_t no_entries = 10;
     char *entries[10];
 
     for (size_t i = 0; i < 10; i++) {
-        entries[i] = malloc(100 * sizeof(char)); 
+        entries[i] = malloc(100 * sizeof(char));
         if (entries[i] == NULL) {
             perror("Failed to allocate memory for entry");
+            // Libérer la mémoire déjà allouée
+            for (size_t j = 0; j < i; j++) {
+                free(entries[j]);
+            }
+            close(fd);
             return 1;
         }
     }
 
-    int result = list(fd, "soumission/", entries, &no_entries);
-    if (result != 0) {
+    int result = list(fd, "testar/sym", entries, &no_entries);
+    if (result < 0) {
+        printf("Error occurred during list operation.\n");
+    } else if (result == 0) {
         printf("No directory found at given path in the archive.\n");
     } else {
         printf("Entries listed:\n");
         for (size_t i = 0; i < no_entries; i++) {
-            printf("%ld : %s\n", i,entries[i]);
+            printf("%zu : %s\n", i, entries[i]);
         }
     }
-    printf("n entries : %ld \n",no_entries);
+    printf("Number of entries: %zu\n", no_entries);
 
     for (size_t i = 0; i < 10; i++) {
         free(entries[i]);
     }
-    printf("%d\n",result);
 
     close(fd);
     return 0;
